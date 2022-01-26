@@ -1008,8 +1008,7 @@ int falco_init(int argc, char **argv)
 
 		if(validate_rules_filenames.size() > 0)
 		{
-			std::list<swappable_falco_engine::rulesfile> validate_rules;
-			std::string errstr;
+			std::list<falco_engine::rulesfile> validate_rules;
 
 			falco_logger::log(LOG_INFO, "Validating rules file(s):\n");
 			for(auto file : validate_rules_filenames)
@@ -1020,15 +1019,29 @@ int falco_init(int argc, char **argv)
 			{
 				throw falco_exception(errstr);
 			}
-			if (!swengine.validate(validate_rules, errstr))
+			bool ret = swengine.validate(validate_rules, errstr);
+
+			if(!ret)
 			{
-				printf("%s\n", errstr.c_str());
+				// Print to stdout and also throw an error
+				printf("%s", errstr.c_str());
+
 				throw falco_exception(errstr);
 			}
 			else
 			{
-				printf("Ok\n");
+				// errstr might contain warnings. Print them
+				// if verbose is true.
+				if(engine_config.verbose && !errstr.empty())
+				{
+					printf("%s", errstr.c_str());
+				}
+				else
+				{
+					printf("Ok\n");
+				}
 			}
+
 			falco_logger::log(LOG_INFO, "Ok\n");
 			goto exit;
 		}
@@ -1044,11 +1057,24 @@ int falco_init(int argc, char **argv)
 			falco_logger::log(LOG_INFO, "Loading rules from file " + filename + ":\n");
 		}
 
-		std::list<swappable_falco_engine::rulesfile> rulesfiles;
-		if (!swappable_falco_engine::open_files(config.m_rules_filenames, rulesfiles, errstr) ||
-		    !swengine.replace(rulesfiles, errstr))
+		std::list<falco_engine::rulesfile> rulesfiles;
+		if (!swappable_falco_engine::open_files(config.m_rules_filenames, rulesfiles, errstr))
 		{
 			throw falco_exception(errstr);
+		}
+
+		bool ret = swengine.replace(rulesfiles, errstr);
+
+		if (!ret)
+		{
+			throw falco_exception(errstr);
+		}
+
+		// errstr might contain warnings. Print them
+		// if verbose is true.
+		if(engine_config.verbose && !errstr.empty())
+		{
+			fprintf(stderr, "When reading rules: %s", errstr.c_str());
 		}
 
 		// You can't both disable and enable rules
@@ -1097,7 +1123,8 @@ int falco_init(int argc, char **argv)
 				nlohmann::json finfo;
 				finfo["name"] = rf.name;
 				nlohmann::json variant;
-				variant["required_engine_version"] = rf.required_engine_version;
+				// XXX/mstemm add this back
+				//variant["required_engine_version"] = rf.required_engine_version;
 				variant["content"] = rf.content;
 				finfo["variants"].push_back(variant);
 				support["rules_files"].push_back(finfo);
